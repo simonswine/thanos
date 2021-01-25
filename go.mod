@@ -5,6 +5,8 @@ require (
 	cloud.google.com/go/storage v1.10.0
 	github.com/Azure/azure-pipeline-go v0.2.2
 	github.com/Azure/azure-storage-blob-go v0.8.0
+	github.com/Azure/go-autorest/autorest v0.11.17 // indirect
+	github.com/Azure/go-autorest/autorest/adal v0.9.10
 	github.com/NYTimes/gziphandler v1.1.1
 	github.com/alecthomas/units v0.0.0-20190924025748-f65c72e2690d
 	github.com/aliyun/aliyun-oss-go-sdk v2.0.4+incompatible
@@ -57,7 +59,7 @@ require (
 	go.uber.org/atomic v1.7.0
 	go.uber.org/automaxprocs v1.2.0
 	go.uber.org/goleak v1.1.10
-	golang.org/x/crypto v0.0.0-20201002170205-7f63de1d35b0
+	golang.org/x/crypto v0.0.0-20201221181555-eec23a3978ad
 	golang.org/x/oauth2 v0.0.0-20201109201403-9fd604954f58
 	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
 	golang.org/x/text v0.3.4

@@ -12,6 +12,10 @@ import (
 
 	"github.com/Azure/azure-pipeline-go/pipeline"
 	blob "github.com/Azure/azure-storage-blob-go/azblob"
+	"github.com/Azure/go-autorest/autorest/adal"
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
+	"github.com/pkg/errors"
 )
 
 // DirDelim is the delimiter used to model a directory structure in an object store bucket.
@@ -30,10 +34,59 @@ func init() {
 	pipeline.SetForceLogEnabled(false)
 }
 
-func getContainerURL(ctx context.Context, conf Config) (blob.ContainerURL, error) {
-	c, err := blob.NewSharedKeyCredential(conf.StorageAccountName, conf.StorageAccountKey)
-	if err != nil {
-		return blob.ContainerURL{}, err
+func getContainerURL(ctx context.Context, logger log.Logger, conf Config) (blob.ContainerURL, error) {
+	var c blob.Credential
+
+	if conf.StorageAccountKey == "" {
+		msiEndpoint, err := adal.GetMSIEndpoint()
+		if err != nil {
+			return blob.ContainerURL{}, errors.Wrap(err, "unable to get msi endpoint")
+
+		}
+
+		sp, err := adal.NewServicePrincipalTokenFromMSI(msiEndpoint, "https://storage.azure.com/")
+		if err != nil {
+			return blob.ContainerURL{}, errors.Wrap(err, "unable to get service principal token")
+		}
+
+		// initial refresh
+		if err := sp.Refresh(); err != nil {
+			return blob.ContainerURL{}, errors.Wrap(err, "unable to refresh service principal token")
+		}
+
+		c = blob.NewTokenCredential(sp.Token().AccessToken, func(cred blob.TokenCredential) time.Duration {
+			// TODO: verify implementation
+			// TODO: backoff on errors
+
+			level.Debug(logger).Log("msg", "refresh Azure token")
+
+			if err := sp.Refresh(); err != nil {
+				level.Error(logger).Log("msg", "error refreshing Azure token", "err", err)
+				return time.Second
+			}
+
+			token := sp.Token()
+			cred.SetToken(token.AccessToken)
+
+			// refresh 5 minutes before expiry
+			refreshDuration := token.Expires().UTC().Sub(time.Now())
+			level.Debug(logger).Log("msg", "token refresh", "expires_in", refreshDuration)
+
+			refreshDuration -= 5 * time.Minute
+
+			if refreshDuration < 0 {
+				return time.Second
+			}
+
+			return refreshDuration
+		})
+
+	} else {
+		var err error
+		c, err = blob.NewSharedKeyCredential(conf.StorageAccountName, conf.StorageAccountKey)
+		if err != nil {
+			return blob.ContainerURL{}, err
+		}
 	}
 
 	retryOptions := blob.RetryOptions{
@@ -64,8 +117,8 @@ func getContainerURL(ctx context.Context, conf Config) (blob.ContainerURL, error
 	return service.NewContainerURL(conf.ContainerName), nil
 }
 
-func getContainer(ctx context.Context, conf Config) (blob.ContainerURL, error) {
-	c, err := getContainerURL(ctx, conf)
+func getContainer(ctx context.Context, logger log.Logger, conf Config) (blob.ContainerURL, error) {
+	c, err := getContainerURL(ctx, logger, conf)
 	if err != nil {
 		return blob.ContainerURL{}, err
 	}
@@ -74,8 +127,8 @@ func getContainer(ctx context.Context, conf Config) (blob.ContainerURL, error) {
 	return c, err
 }
 
-func createContainer(ctx context.Context, conf Config) (blob.ContainerURL, error) {
-	c, err := getContainerURL(ctx, conf)
+func createContainer(ctx context.Context, logger log.Logger, conf Config) (blob.ContainerURL, error) {
+	c, err := getContainerURL(ctx, logger, conf)
 	if err != nil {
 		return blob.ContainerURL{}, err
 	}
@@ -86,8 +139,8 @@ func createContainer(ctx context.Context, conf Config) (blob.ContainerURL, error
 	return c, err
 }
 
-func getBlobURL(ctx context.Context, conf Config, blobName string) (blob.BlockBlobURL, error) {
-	c, err := getContainerURL(ctx, conf)
+func getBlobURL(ctx context.Context, logger log.Logger, conf Config, blobName string) (blob.BlockBlobURL, error) {
+	c, err := getContainerURL(ctx, logger, conf)
 	if err != nil {
 		return blob.BlockBlobURL{}, err
 	}

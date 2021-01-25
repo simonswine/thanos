@@ -44,13 +44,13 @@ type Bucket struct {
 func (conf *Config) validate() error {
 	if conf.StorageAccountName == "" ||
 		conf.StorageAccountKey == "" {
-		return errors.New("invalid Azure storage configuration")
+		//return errors.New("invalid Azure storage configuration")
 	}
 	if conf.StorageAccountName == "" && conf.StorageAccountKey != "" {
 		return errors.New("no Azure storage_account specified while storage_account_key is present in config file; both should be present")
 	}
 	if conf.StorageAccountName != "" && conf.StorageAccountKey == "" {
-		return errors.New("no Azure storage_account_key specified while storage_account is present in config file; both should be present")
+		//return errors.New("no Azure storage_account_key specified while storage_account is present in config file; both should be present")
 	}
 	if conf.ContainerName == "" {
 		return errors.New("no Azure container specified")
@@ -78,7 +78,7 @@ func NewBucket(logger log.Logger, azureConfig []byte, component string) (*Bucket
 	}
 
 	ctx := context.Background()
-	container, err := createContainer(ctx, conf)
+	container, err := createContainer(ctx, logger, conf)
 	if err != nil {
 		ret, ok := err.(blob.StorageError)
 		if !ok {
@@ -86,7 +86,7 @@ func NewBucket(logger log.Logger, azureConfig []byte, component string) (*Bucket
 		}
 		if ret.ServiceCode() == "ContainerAlreadyExists" {
 			level.Debug(logger).Log("msg", "Getting connection to existing Azure blob container", "container", conf.ContainerName)
-			container, err = getContainer(ctx, conf)
+			container, err = getContainer(ctx, logger, conf)
 			if err != nil {
 				return nil, errors.Wrapf(err, "cannot get existing Azure blob container: %s", container)
 			}
@@ -182,7 +182,7 @@ func (b *Bucket) getBlobReader(ctx context.Context, name string, offset, length 
 		return nil, errors.New("X-Ms-Error-Code: [BlobNotFound]")
 	}
 
-	blobURL, err := getBlobURL(ctx, *b.config, name)
+	blobURL, err := getBlobURL(ctx, b.logger, *b.config, name)
 	if err != nil {
 		return nil, errors.Wrapf(err, "cannot get Azure blob URL, address: %s", name)
 	}
@@ -233,7 +233,7 @@ func (b *Bucket) GetRange(ctx context.Context, name string, off, length int64) (
 
 // Attributes returns information about the specified object.
 func (b *Bucket) Attributes(ctx context.Context, name string) (objstore.ObjectAttributes, error) {
-	blobURL, err := getBlobURL(ctx, *b.config, name)
+	blobURL, err := getBlobURL(ctx, b.logger, *b.config, name)
 	if err != nil {
 		return objstore.ObjectAttributes{}, errors.Wrapf(err, "cannot get Azure blob URL, blob: %s", name)
 	}
@@ -253,7 +253,7 @@ func (b *Bucket) Attributes(ctx context.Context, name string) (objstore.ObjectAt
 // Exists checks if the given object exists.
 func (b *Bucket) Exists(ctx context.Context, name string) (bool, error) {
 	level.Debug(b.logger).Log("msg", "check if blob exists", "blob", name)
-	blobURL, err := getBlobURL(ctx, *b.config, name)
+	blobURL, err := getBlobURL(ctx, b.logger, *b.config, name)
 	if err != nil {
 		return false, errors.Wrapf(err, "cannot get Azure blob URL, address: %s", name)
 	}
@@ -271,7 +271,7 @@ func (b *Bucket) Exists(ctx context.Context, name string) (bool, error) {
 // Upload the contents of the reader as an object into the bucket.
 func (b *Bucket) Upload(ctx context.Context, name string, r io.Reader) error {
 	level.Debug(b.logger).Log("msg", "Uploading blob", "blob", name)
-	blobURL, err := getBlobURL(ctx, *b.config, name)
+	blobURL, err := getBlobURL(ctx, b.logger, *b.config, name)
 	if err != nil {
 		return errors.Wrapf(err, "cannot get Azure blob URL, address: %s", name)
 	}
@@ -289,7 +289,7 @@ func (b *Bucket) Upload(ctx context.Context, name string, r io.Reader) error {
 // Delete removes the object with the given name.
 func (b *Bucket) Delete(ctx context.Context, name string) error {
 	level.Debug(b.logger).Log("msg", "Deleting blob", "blob", name)
-	blobURL, err := getBlobURL(ctx, *b.config, name)
+	blobURL, err := getBlobURL(ctx, b.logger, *b.config, name)
 	if err != nil {
 		return errors.Wrapf(err, "cannot get Azure blob URL, address: %s", name)
 	}
