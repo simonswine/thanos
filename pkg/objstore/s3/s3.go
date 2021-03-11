@@ -60,6 +60,7 @@ var DefaultConfig = Config{
 // Config stores the configuration for s3 bucket.
 type Config struct {
 	Bucket             string            `yaml:"bucket"`
+	Prefix             string            `yaml:"prefix"`
 	Endpoint           string            `yaml:"endpoint"`
 	Region             string            `yaml:"region"`
 	AccessKey          string            `yaml:"access_key"`
@@ -139,6 +140,7 @@ type Bucket struct {
 	putUserMetadata map[string]string
 	partSize        uint64
 	listObjectsV1   bool
+	prefix          string
 }
 
 // parseConfig unmarshals a buffer into a Config with default HTTPConfig values.
@@ -270,6 +272,11 @@ func NewBucketWithConfig(logger log.Logger, config Config, component string) (*B
 		return nil, errors.Errorf("Initialize s3 client list objects version: Unsupported version %q was provided. Supported values are v1, v2", config.ListObjectsVersion)
 	}
 
+	prefix := ""
+	if config.Prefix != "" {
+		prefix = strings.TrimSuffix(config.Prefix, DirDelim) + DirDelim
+	}
+
 	bkt := &Bucket{
 		logger:          logger,
 		name:            config.Bucket,
@@ -278,6 +285,7 @@ func NewBucketWithConfig(logger log.Logger, config Config, component string) (*B
 		putUserMetadata: config.PutUserMetadata,
 		partSize:        config.PartSize,
 		listObjectsV1:   config.ListObjectsVersion == "v1",
+		prefix:          prefix,
 	}
 	return bkt, nil
 }
@@ -332,7 +340,7 @@ func (b *Bucket) Iter(ctx context.Context, dir string, f func(string) error) err
 	}
 
 	opts := minio.ListObjectsOptions{
-		Prefix:    dir,
+		Prefix:    b.prefix + dir,
 		Recursive: false,
 		UseV1:     b.listObjectsV1,
 	}
@@ -342,15 +350,18 @@ func (b *Bucket) Iter(ctx context.Context, dir string, f func(string) error) err
 		if object.Err != nil {
 			return object.Err
 		}
+
+		key := strings.TrimPrefix(object.Key, b.prefix)
+
 		// This sometimes happens with empty buckets.
-		if object.Key == "" {
+		if key == "" {
 			continue
 		}
 		// The s3 client can also return the directory itself in the ListObjects call above.
-		if object.Key == dir {
+		if key == dir {
 			continue
 		}
-		if err := f(object.Key); err != nil {
+		if err := f(key); err != nil {
 			return err
 		}
 	}
@@ -388,16 +399,19 @@ func (b *Bucket) getRange(ctx context.Context, name string, off, length int64) (
 
 // Get returns a reader for the given object name.
 func (b *Bucket) Get(ctx context.Context, name string) (io.ReadCloser, error) {
+	name = b.prefix + name
 	return b.getRange(ctx, name, 0, -1)
 }
 
 // GetRange returns a new range reader for the given object name and range.
 func (b *Bucket) GetRange(ctx context.Context, name string, off, length int64) (io.ReadCloser, error) {
+	name = b.prefix + name
 	return b.getRange(ctx, name, off, length)
 }
 
 // Exists checks if the given object exists.
 func (b *Bucket) Exists(ctx context.Context, name string) (bool, error) {
+	name = b.prefix + name
 	_, err := b.client.StatObject(ctx, b.name, name, minio.StatObjectOptions{})
 	if err != nil {
 		if b.IsObjNotFoundErr(err) {
@@ -411,6 +425,8 @@ func (b *Bucket) Exists(ctx context.Context, name string) (bool, error) {
 
 // Upload the contents of the reader as an object into the bucket.
 func (b *Bucket) Upload(ctx context.Context, name string, r io.Reader) error {
+	name = b.prefix + name
+
 	// TODO(https://github.com/thanos-io/thanos/issues/678): Remove guessing length when minio provider will support multipart upload without this.
 	size, err := objstore.TryToGetSize(r)
 	if err != nil {
@@ -443,6 +459,7 @@ func (b *Bucket) Upload(ctx context.Context, name string, r io.Reader) error {
 
 // Attributes returns information about the specified object.
 func (b *Bucket) Attributes(ctx context.Context, name string) (objstore.ObjectAttributes, error) {
+	name = b.prefix + name
 	objInfo, err := b.client.StatObject(ctx, b.name, name, minio.StatObjectOptions{})
 	if err != nil {
 		return objstore.ObjectAttributes{}, err
@@ -456,6 +473,7 @@ func (b *Bucket) Attributes(ctx context.Context, name string) (objstore.ObjectAt
 
 // Delete removes the object with the given name.
 func (b *Bucket) Delete(ctx context.Context, name string) error {
+	name = b.prefix + name
 	return b.client.RemoveObject(ctx, b.name, name, minio.RemoveObjectOptions{})
 }
 
