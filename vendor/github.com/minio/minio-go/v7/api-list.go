@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 
 	"github.com/minio/minio-go/v7/pkg/s3utils"
 )
@@ -96,6 +97,7 @@ func (c Client) listObjectsV2(ctx context.Context, bucketName, objectPrefix stri
 		var continuationToken string
 		for {
 			// Get list of objects a maximum of 1000 per request.
+			fmt.Fprintf(os.Stderr, "DEBUG-S3 REQUEST bucketname=%s objectPrefix=%s continuationToken=%s\n", bucketName, objectPrefix, continuationToken)
 			result, err := c.listObjectsV2Query(ctx, bucketName, objectPrefix, continuationToken,
 				fetchOwner, metadata, delimiter, maxKeys)
 			if err != nil {
@@ -104,6 +106,7 @@ func (c Client) listObjectsV2(ctx context.Context, bucketName, objectPrefix stri
 				}
 				return
 			}
+			fmt.Fprintf(os.Stderr, "DEBUG-S3 RESPONSE bucketname=%s objectPrefix=%s nextContinuationToken=%s isTruncated=%v\n", bucketName, objectPrefix, result.NextContinuationToken, result.IsTruncated)
 
 			// If contents are available loop through and send over channel.
 			for _, object := range result.Contents {
